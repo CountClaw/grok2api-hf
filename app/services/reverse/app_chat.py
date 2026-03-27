@@ -2,7 +2,9 @@
 Reverse interface: app chat conversations.
 """
 
+import asyncio
 import inspect
+import time
 import orjson
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -18,6 +20,35 @@ from app.services.reverse.utils.retry import extract_status_for_retry, retry_on_
 
 CHAT_API = "https://grok.com/rest/app-chat/conversations/new"
 _LAST_PROXY_LOG_STATE: tuple[str, str] | None = None
+
+# CF 刷新防抖：60 秒内不重复刷新
+_last_cf_refresh_time: float = 0.0
+_cf_refresh_lock = asyncio.Lock()
+_CF_REFRESH_COOLDOWN = 60.0
+
+
+async def _trigger_cf_refresh_on_403() -> bool:
+    """403 时触发一次 CF clearance 刷新（带防抖）"""
+    global _last_cf_refresh_time
+    now = time.monotonic()
+    if now - _last_cf_refresh_time < _CF_REFRESH_COOLDOWN:
+        logger.debug("CF refresh skipped (cooldown)")
+        return False
+    async with _cf_refresh_lock:
+        # 双重检查
+        now = time.monotonic()
+        if now - _last_cf_refresh_time < _CF_REFRESH_COOLDOWN:
+            return False
+        logger.info("403 detected, triggering on-demand CF refresh...")
+        try:
+            from app.services.cf_refresh.scheduler import refresh_once
+            success = await refresh_once()
+            _last_cf_refresh_time = time.monotonic()
+            return success
+        except Exception as e:
+            logger.error("On-demand CF refresh failed: {}", e)
+            _last_cf_refresh_time = time.monotonic()
+            return False
 
 
 def _normalize_chat_proxy(proxy_url: str) -> str:
@@ -291,7 +322,7 @@ class AppChatReverse:
                     content_type = str(response.headers.get("content-type", ""))
 
                     logger.error(
-                        "AppChatReverse: Chat failed, %s, content_type=%s, body=%s",
+                        "AppChatReverse: Chat failed, {}, content_type={}, body={}",
                         response.status_code,
                         content_type,
                         content[:500],
@@ -313,6 +344,8 @@ class AppChatReverse:
             async def _on_retry(attempt: int, status_code: int, error: Exception, delay: float):
                 if active_proxy_key and should_rotate_proxy(status_code):
                     rotate_proxy(active_proxy_key)
+                if status_code == 403:
+                    await _trigger_cf_refresh_on_403()
 
             response = await retry_on_status(
                 _do_request,
