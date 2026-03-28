@@ -33,8 +33,8 @@ def get_timeout() -> int:
 
 
 def get_proxy() -> str:
-    """使用基础代理 URL，保证出口 IP 一致"""
-    return _get("base_proxy_url", "") or ""
+    """CF 刷新专用代理，优先 cf_proxy_url，回退 base_proxy_url"""
+    return _get("cf_proxy_url", "") or _get("base_proxy_url", "") or ""
 
 
 def is_enabled() -> bool:
