@@ -37,6 +37,9 @@ SIZE_TO_ASPECT = {
     "1024x1024": "1:1",
 }
 ALLOWED_ASPECT_RATIOS = {"1:1", "2:3", "3:2", "9:16", "16:9"}
+UNIFIED_IMAGE_MODEL_ID = "grok-imagine-1.0"
+LEGACY_IMAGE_EDIT_MODEL_ID = "grok-imagine-1.0-edit"
+ALLOWED_IMAGE_EDIT_MODELS = {UNIFIED_IMAGE_MODEL_ID, LEGACY_IMAGE_EDIT_MODEL_ID}
 
 
 class ImageGenerationRequest(BaseModel):
@@ -59,7 +62,7 @@ class ImageEditRequest(BaseModel):
     """图片编辑请求 - OpenAI 兼容"""
 
     prompt: str = Field(..., description="编辑描述")
-    model: Optional[str] = Field("grok-imagine-1.0-edit", description="模型名称")
+    model: Optional[str] = Field(UNIFIED_IMAGE_MODEL_ID, description="模型名称")
     image: Optional[Union[str, List[str]]] = Field(None, description="待编辑图片文件")
     n: Optional[int] = Field(1, ge=1, le=10, description="生成数量 (1-10)")
     size: Optional[str] = Field(
@@ -191,19 +194,21 @@ def resolve_aspect_ratio(size: str) -> str:
 
 def validate_edit_request(request: ImageEditRequest, images: List[UploadFile]):
     """验证图片编辑请求参数"""
-    if request.model != "grok-imagine-1.0-edit":
+    if request.model not in ALLOWED_IMAGE_EDIT_MODELS:
         raise ValidationException(
-            message=("The model `grok-imagine-1.0-edit` is required for image edits."),
+            message=(
+                "Image edits support `grok-imagine-1.0` and "
+                "`grok-imagine-1.0-edit`."
+            ),
             param="model",
             code="model_not_supported",
         )
     model_info = ModelService.get(request.model)
-    if not model_info or not model_info.is_image_edit:
-        edit_models = [m.model_id for m in ModelService.MODELS if m.is_image_edit]
+    if not model_info:
         raise ValidationException(
             message=(
                 f"The model `{request.model}` is not supported for image edits. "
-                f"Supported: {edit_models}"
+                f"Supported: {sorted(ALLOWED_IMAGE_EDIT_MODELS)}"
             ),
             param="model",
             code="model_not_supported",
@@ -319,7 +324,7 @@ async def create_image(request: ImageGenerationRequest):
 async def edit_image(
     prompt: str = Form(...),
     image: List[UploadFile] = File(...),
-    model: Optional[str] = Form("grok-imagine-1.0-edit"),
+    model: Optional[str] = Form(UNIFIED_IMAGE_MODEL_ID),
     n: int = Form(1),
     size: str = Form("1024x1024"),
     quality: str = Form("standard"),
