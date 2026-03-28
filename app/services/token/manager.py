@@ -733,7 +733,11 @@ class TokenManager:
             logger.warning(f"Pool '{pool_name}': token already exists")
             return False
 
-        token_info = TokenInfo(token=token, quota=_default_quota_for_pool(pool_name))
+        token_info = TokenInfo(
+            token=token,
+            quota=_default_quota_for_pool(pool_name),
+            tags=["nsfw"],
+        )
         pool.add(token_info)
         self._track_token_change(token_info, pool_name, "state")
         await self._save(force=True)
