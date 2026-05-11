@@ -81,6 +81,17 @@ ALLOWED_IMAGE_SIZES = {
     "1024x1024",
 }
 IMAGINE_FAST_MODEL_ID = "grok-imagine-1.0-fast"
+UNIFIED_IMAGE_MODEL_ID = "grok-imagine-1.0"
+
+
+def _should_route_image_edit(
+    model_id: str, model_info: Any, image_urls: List[str]
+) -> bool:
+    if not model_info:
+        return False
+    if model_info.is_image_edit:
+        return True
+    return model_id == UNIFIED_IMAGE_MODEL_ID and bool(image_urls)
 
 
 def _validate_media_input(value: str, field_name: str, param: str):
@@ -593,6 +604,9 @@ def validate_request(request: ChatCompletionRequest):
 
     model_info = ModelService.get(request.model)
     # image 验证
+    prompt = ""
+    image_urls: List[str] = []
+
     if model_info and (model_info.is_image or model_info.is_image_edit):
         prompt, image_urls = _extract_prompt_images(request.messages)
         if not prompt:
@@ -637,8 +651,7 @@ def validate_request(request: ChatCompletionRequest):
         request.image_config = image_conf
 
     # image edit 验证
-    if model_info and model_info.is_image_edit:
-        _, image_urls = _extract_prompt_images(request.messages)
+    if _should_route_image_edit(request.model, model_info, image_urls):
         if not image_urls:
             raise ValidationException(
                 message="image_url is required for image edits",
@@ -710,8 +723,12 @@ async def chat_completions(request: ChatCompletionRequest):
 
     # 检测模型类型
     model_info = ModelService.get(request.model)
-    if model_info and model_info.is_image_edit:
+    prompt = ""
+    image_urls: List[str] = []
+    if model_info and (model_info.is_image or model_info.is_image_edit):
         prompt, image_urls = _extract_prompt_images(request.messages)
+
+    if _should_route_image_edit(request.model, model_info, image_urls):
         if not image_urls:
             raise ValidationException(
                 message="Image is required",

@@ -43,6 +43,21 @@ def _sanitize_token_text(value) -> str:
     return token.encode("ascii", errors="ignore").decode("ascii")
 
 
+def _ensure_nsfw_tag(payload: dict) -> dict:
+    data = dict(payload or {})
+    tags = data.get("tags")
+    if not isinstance(tags, list):
+        tags = []
+    normalized_tags = []
+    for tag in tags:
+        if isinstance(tag, str) and tag.strip():
+            normalized_tags.append(tag.strip())
+    if "nsfw" not in normalized_tags:
+        normalized_tags.append("nsfw")
+    data["tags"] = normalized_tags
+    return data
+
+
 @router.get("/tokens", dependencies=[Depends(verify_app_key)])
 async def get_tokens():
     """获取所有 Token"""
@@ -113,8 +128,7 @@ async def update_tokens(data: dict):
                     )
                     merged = dict(base)
                     merged.update(token_data)
-                    if merged.get("tags") is None:
-                        merged["tags"] = []
+                    merged = _ensure_nsfw_tag(merged)
 
                     filtered = {k: v for k, v in merged.items() if k in allowed_fields}
                     try:
