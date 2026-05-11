@@ -287,6 +287,7 @@ curl http://localhost:8000/v1/images/generations \
 
 - `quality`、`style` 参数为 OpenAI 兼容保留，当前版本暂不支持自定义。
 - 多图编辑若传入超过 3 张，仅取**最后 3 张**作为参考。
+- 生图持续返回 **403** 通常是出口 IP 被 Cloudflare 封禁。可在代理工具中为 `grok.com` 单独指定一个干净的家宽节点（推荐美国/日本），或将 `proxy.cf_proxy_url` 设为 Warp（`socks5://warp:1080`）等干净出口。注意 `cf_clearance` 与出口 IP 绑定，FlareSolverr 和实际请求必须走**同一出口**。
 
 <br>
 

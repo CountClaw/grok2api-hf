@@ -348,10 +348,16 @@ class ImageStreamProcessor(BaseProcessor):
                 if ca := resp.get("cardAttachment"):
                     try:
                         jd = orjson.loads(ca.get("jsonData", b"{}"))
-                        if jd.get("type") in ("render_generated_image", "render_edited_image"):
+                        card_type = jd.get("type", "")
+                        url = None
+                        if card_type in ("render_generated_image", "render_edited_image"):
                             chunk = jd.get("image_chunk", {})
                             if chunk.get("progress", 0) >= 100 and chunk.get("imageUrl"):
                                 url = f"https://assets.grok.com/{chunk['imageUrl']}"
+                        elif card_type == "render_searched_image":
+                            img = jd.get("image", {})
+                            url = img.get("original") or img.get("thumbnail")
+                        if url:
                                 if self.response_format == "url":
                                     processed = await self.process_url(url, "image")
                                     if processed:
@@ -536,10 +542,16 @@ class ImageCollectProcessor(BaseProcessor):
                 if ca := resp.get("cardAttachment"):
                     try:
                         jd = orjson.loads(ca.get("jsonData", b"{}"))
-                        if jd.get("type") in ("render_generated_image", "render_edited_image"):
+                        card_type = jd.get("type", "")
+                        url = None
+                        if card_type in ("render_generated_image", "render_edited_image"):
                             chunk = jd.get("image_chunk", {})
                             if chunk.get("progress", 0) >= 100 and chunk.get("imageUrl"):
                                 url = f"https://assets.grok.com/{chunk['imageUrl']}"
+                        elif card_type == "render_searched_image":
+                            img = jd.get("image", {})
+                            url = img.get("original") or img.get("thumbnail")
+                        if url:
                                 if self.response_format == "url":
                                     processed = await self.process_url(url, "image")
                                     if processed:
@@ -558,8 +570,8 @@ class ImageCollectProcessor(BaseProcessor):
                                         processed = await self.process_url(url, "image")
                                         if processed:
                                             images.append(processed)
-                    except Exception:
-                        pass
+                    except Exception as card_err:
+                        logger.warning(f"cardAttachment processing error: {card_err}")
 
                 if mr := resp.get("modelResponse"):
                     if urls := _collect_images(mr):

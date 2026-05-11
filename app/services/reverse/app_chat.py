@@ -19,6 +19,8 @@ from app.services.reverse.utils.retry import extract_status_for_retry, retry_on_
 CHAT_API = "https://grok.com/rest/app-chat/conversations/new"
 _LAST_PROXY_LOG_STATE: tuple[str, str] | None = None
 
+from app.services.reverse.utils.cf_refresh import trigger_cf_refresh_on_403 as _trigger_cf_refresh_on_403
+
 
 def _normalize_chat_proxy(proxy_url: str) -> str:
     """Normalize proxy URL for curl-cffi app-chat requests."""
@@ -147,15 +149,16 @@ class AppChatReverse:
             "toolOverrides": tool_overrides or {},
         }
 
-        # When model is None, use modeId-based routing (e.g. "auto")
-        # instead of explicit modelName/modelMode.
-        if model is not None:
+        # When model is None or empty, use modeId-based routing ("auto")
+        # instead of explicit modelName/modelMode — matches Grok website behavior.
+        if model:
             payload["modelName"] = model
             payload["modelMode"] = mode
             payload["responseMetadata"] = {
                 "requestModelDetails": {"modelId": model},
             }
         else:
+            payload["modeId"] = "auto"
             payload["responseMetadata"] = {}
 
         if model == "grok-420":
@@ -291,7 +294,7 @@ class AppChatReverse:
                     content_type = str(response.headers.get("content-type", ""))
 
                     logger.error(
-                        "AppChatReverse: Chat failed, %s, content_type=%s, body=%s",
+                        "AppChatReverse: Chat failed, {}, content_type={}, body={}",
                         response.status_code,
                         content_type,
                         content[:500],
@@ -313,6 +316,8 @@ class AppChatReverse:
             async def _on_retry(attempt: int, status_code: int, error: Exception, delay: float):
                 if active_proxy_key and should_rotate_proxy(status_code):
                     rotate_proxy(active_proxy_key)
+                if status_code == 403:
+                    await _trigger_cf_refresh_on_403()
 
             response = await retry_on_status(
                 _do_request,
